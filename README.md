@@ -14,12 +14,18 @@ $ go get -u github.com/d7561985/mongo-buffalo
 
 ### Init client:
 ```
-
     "github.com/d7561985/mongo-buffalo"
     "github.com/gobuffalo/pop"
-
-    client, err := mongobuf.NewMongo(&pop.ConnectionDetails{Host: "127.0.0.1", Database: "testing"})	
-
+```
+```
+if err := config.LoadConfigFile(); err != nil{
+    return err
+}
+env := envy.Get("GO_ENV", "development")
+client, err := mongobuf.NewMongo(config.ConnectionDetails[env])
+if err != nil {
+    return err
+}
 ```
 
 ### Validation
@@ -30,8 +36,8 @@ Yout need to implement following interface with requirement of validate pkg of g
 ```
 ```
 ValidateAble interface {
-		Validate() *validate.Errors
-	}
+    Validate() *validate.Errors
+}
 ``` 
 
 This open a lot of flexible ways of usage. For example where is packege with prebuilded validators:
@@ -87,16 +93,16 @@ receiver of Add method should be link (ptr). Example:
 type As []A
 
 func (As) T() interface{} {
-	return &A{}
+    return &A{}
 }
 
 func (a *As) Add(in interface{}) error {
-	link, ok := in.(*A)
-	if !ok {
-		return errors.New("bad cast")
-	}
-	*a = append(*a, *link)
-	return nil
+    link, ok := in.(*A)
+    if !ok {
+        return errors.New("bad cast")
+    }
+    *a = append(*a, *link)
+    return nil
 }
 ```
 or as pointer in slice:

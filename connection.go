@@ -56,6 +56,9 @@ func (m *Mongodb) Name() string {
 }
 
 func (m *Mongodb) URL() string {
+	if m.ConnectionDetails.URL != "" {
+		return m.ConnectionDetails.URL
+	}
 	return "mongodb://" + m.ConnectionDetails.Host + ":" + m.ConnectionDetails.Port
 }
 
