@@ -1,6 +1,7 @@
 package mongobuf
 
 import (
+	"fmt"
 	"github.com/gobuffalo/pop"
 	"github.com/gobuffalo/validate"
 	"github.com/mongodb/mongo-go-driver/bson"
@@ -9,16 +10,28 @@ import (
 	"strings"
 )
 
-type Model struct {
-	pop.Model
-}
+type (
+	Model struct {
+		pop.Model
+	}
+
+	ValidateAble interface {
+		Validate() *validate.Errors
+	}
+
+	// All represent slice
+	All interface {
+		// return empty instance of slice type
+		// PTR only!!!!!
+		T() interface{}
+
+		// add to back
+		Add(interface{}) error
+	}
+)
 
 func M(in interface{}) *Model {
 	return &Model{Model: pop.Model{Value: in}}
-}
-
-type ValidateAble interface {
-	Validate() *validate.Errors
 }
 
 func (m *Model) Validate() *validate.Errors {
@@ -58,6 +71,19 @@ func (m *Model) GetObjectID() bson.M {
 			}
 			return bson.M{strings.ToLower(v.Type().Field(i).Name): f}
 		}
+	}
+	return nil
+}
+
+// small helper for check All interface is it correct
+func checkAll(in All) error {
+	if reflect.Indirect(reflect.ValueOf(in)).Kind() != reflect.Slice {
+		return fmt.Errorf("@in is not slice type (%s)", reflect.ValueOf(in).Kind())
+	}
+
+	rfl := reflect.ValueOf(in.T())
+	if rfl.Kind() != reflect.Ptr {
+		return fmt.Errorf("@in.T() is not ptr type (%s)", rfl.Kind().String())
 	}
 	return nil
 }

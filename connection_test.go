@@ -1,15 +1,14 @@
 package mongobuf_test
 
 import (
-	"context"
-	"fmt"
 	"github.com/gobuffalo/validate"
 	"github.com/gobuffalo/validate/validators"
+	"github.com/icrowley/fake"
+	"github.com/kataras/iris/core/errors"
 	"github.com/mongodb/mongo-go-driver/bson"
 	"github.com/mongodb/mongo-go-driver/bson/primitive"
-	"github.com/mongodb/mongo-go-driver/mongo/readpref"
 	"github.com/stretchr/testify/assert"
-	"time"
+	"sync"
 )
 
 type A struct {
@@ -24,34 +23,28 @@ func (a *A) Validate() *validate.Errors {
 	)
 }
 
-func (m *MongoSuit) TestPing() {
-	ctx, close := context.WithTimeout(context.Background(), 10*time.Second)
-	defer close()
+type As []A
 
-	collection := m.db.Client.Database("testing").Collection("col1")
-	_, err := collection.InsertOne(ctx, &A{A: "e", ID: primitive.NewObjectID()})
-	assert.NoError(m.T(), err)
-
-	err = m.db.Client.Ping(ctx, readpref.Primary())
-	assert.NoError(m.T(), err)
-
-	res := &A{}
-	err = collection.FindOne(ctx, bson.M{"a": "e"}).Decode(res)
-	assert.NoError(m.T(), err)
-
-	all := []A{}
-	cursor, err := collection.Find(ctx, bson.M{})
-	assert.NoError(m.T(), err)
-	for cursor.Next(ctx) {
-		c := A{}
-		err = cursor.Decode(&c)
-		assert.NoError(m.T(), err)
-		all = append(all, c)
-	}
-	fmt.Printf("%+[1]v %[1]v", all)
+func (As) T() interface{} {
+	return &A{}
 }
 
-func (m *MongoSuit) TestCreate() {
+func (a *As) Add(in interface{}) error {
+	link, ok := in.(*A)
+	if !ok {
+		return errors.New("bad cast")
+	}
+	*a = append(*a, *link)
+	return nil
+}
+
+func (m *MongoSuit) TestPing() {
+	err := m.db.Ping()
+	assert.NoError(m.T(), err)
+}
+
+// create
+func (m *MongoSuit) TestCRUD1() {
 	in := A{}
 
 	// first check validation
@@ -66,8 +59,36 @@ func (m *MongoSuit) TestCreate() {
 	assert.NoError(m.T(), err)
 	assert.NotEqual(m.T(), in.ID, primitive.NilObjectID)
 
-	in.A = "Update"
-	verr, err = m.db.Update(&in)
+	m.Store["CRUD"] = in.ID
+}
+
+// update
+func (m *MongoSuit) TestCRUD2() {
+	if !assert.NotEqual(m.T(), primitive.NilObjectID, m.Store["CRUD"]) {
+		return
+	}
+	in := A{A: "Update", ID: m.Store["CRUD"]}
+
+	verr, err := m.db.Update(&in)
 	assert.False(m.T(), verr.HasAny())
 	assert.NoError(m.T(), err)
+}
+
+func (m *MongoSuit) TestAll() {
+	g := sync.WaitGroup{}
+	for i := 0; i < 10; i++ {
+		g.Add(1)
+		go func() {
+			verr, err := m.db.Create(&A{A: fake.Brand()})
+			assert.NoError(m.T(), err)
+			assert.False(m.T(), verr.HasAny())
+			g.Done()
+		}()
+	}
+	g.Wait()
+	list := make(As, 0)
+	err := m.db.All(&list, bson.M{})
+	assert.NoError(m.T(), err)
+	assert.NotEmpty(m.T(), list)
+
 }

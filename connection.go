@@ -3,14 +3,13 @@ package mongobuf
 import (
 	"context"
 	"fmt"
-	"github.com/gobuffalo/fizz"
 	"github.com/gobuffalo/pop"
 	"github.com/gobuffalo/validate"
 	"github.com/kataras/iris/core/errors"
 	"github.com/markbates/going/defaults"
+	"github.com/mongodb/mongo-go-driver/bson"
 	"github.com/mongodb/mongo-go-driver/mongo"
 	"github.com/mongodb/mongo-go-driver/mongo/readpref"
-	"io"
 	"sync"
 	"time"
 )
@@ -18,12 +17,16 @@ import (
 const nameMongoDB = "mongo"
 const portMongo = "27017"
 
+// Mongodb is helper for access to MongoDB.
+// Current approach used here not support concurrent access => used Mutex for protect this.
+// Goal of this adapter help to develop simple low/mid loaded systems.
 type Mongodb struct {
 	mu                sync.Mutex
 	ConnectionDetails *pop.ConnectionDetails
-	Client            *mongo.Client
+	client            *mongo.Client
 }
 
+// NewMongo
 func NewMongo(deets *pop.ConnectionDetails) (*Mongodb, error) {
 	finalizerMongoDB(deets)
 
@@ -40,16 +43,8 @@ func NewMongo(deets *pop.ConnectionDetails) (*Mongodb, error) {
 		return nil, err
 	}
 
-	res.Client = client
-
-	ctx, close := context.WithTimeout(context.Background(), 10*time.Second)
-	defer close()
-
-	if err = client.Ping(ctx, readpref.Primary()); err != nil {
-		return nil, err
-	}
-
-	return res, nil
+	res.client = client
+	return res, res.Ping()
 }
 
 func finalizerMongoDB(cd *pop.ConnectionDetails) {
@@ -68,8 +63,24 @@ func (m *Mongodb) Details() *pop.ConnectionDetails {
 	return m.ConnectionDetails
 }
 
+// GetCollection create collection object suitable for current instance of model.
+func (m *Mongodb) GetCollection(mdl *Model) *mongo.Collection {
+	return m.client.Database(m.Details().Database).Collection(mdl.TableName())
+}
+
+// Ping simple
+func (m *Mongodb) Ping() error {
+	ctx, close := context.WithTimeout(context.Background(), 10*time.Second)
+	defer close()
+
+	return m.client.Ping(ctx, readpref.Primary())
+}
+
 // Save model inside db.
 func (m *Mongodb) Create(model interface{}) (*validate.Errors, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	mdl := M(model)
 	verr := mdl.Validate()
 	if verr.HasAny() {
@@ -81,8 +92,7 @@ func (m *Mongodb) Create(model interface{}) (*validate.Errors, error) {
 	ctx, close := context.WithTimeout(context.Background(), 10*time.Second)
 	defer close()
 
-	collection := m.Client.Database(m.Details().Database).Collection(mdl.TableName())
-	_, err := collection.InsertOne(ctx, model)
+	_, err := m.GetCollection(mdl).InsertOne(ctx, model)
 	if err != nil {
 		return verr, err
 	}
@@ -90,7 +100,11 @@ func (m *Mongodb) Create(model interface{}) (*validate.Errors, error) {
 	return verr, nil
 }
 
+// Update update model with presented
 func (m *Mongodb) Update(model interface{}) (*validate.Errors, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	mdl := M(model)
 
 	verr := mdl.Validate()
@@ -106,8 +120,7 @@ func (m *Mongodb) Update(model interface{}) (*validate.Errors, error) {
 	ctx, close := context.WithTimeout(context.Background(), 10*time.Second)
 	defer close()
 
-	collection := m.Client.Database(m.Details().Database).Collection(mdl.TableName())
-	result, err := collection.ReplaceOne(ctx, filter, model)
+	result, err := m.GetCollection(mdl).ReplaceOne(ctx, filter, model)
 	if err != nil {
 		return verr, err
 	}
@@ -120,38 +133,49 @@ func (m *Mongodb) Update(model interface{}) (*validate.Errors, error) {
 	return verr, nil
 }
 
-func (Mongodb) TranslateSQL(string) string {
-	panic("implement me")
+// Get make search one document corresponding to filter rules.
+// @filter - simple map[string]interface{}, where string is in model var. name (key) and interface value of this key
+func (m *Mongodb) Get(in interface{}, filter bson.M) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	mdl := M(in)
+
+	ctx, close := context.WithTimeout(context.Background(), 10*time.Second)
+	defer close()
+
+	return m.GetCollection(mdl).FindOne(ctx, filter).Decode(in)
 }
 
-func (Mongodb) CreateDB() error {
-	panic("implement me")
-}
+// All pollute @in parameter of All interface with data witch was founded.
+// @filter - simple map[string]interface{}, where string is in model var. name (key) and interface value of this key
+func (m *Mongodb) All(in All, filter bson.M) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-func (Mongodb) DropDB() error {
-	panic("implement me")
-}
+	if err := checkAll(in); err != nil {
+		return err
+	}
 
-func (Mongodb) DumpSchema(io.Writer) error {
-	panic("implement me")
-}
+	mdl := M(in.T())
 
-func (Mongodb) LoadSchema(io.Reader) error {
-	panic("implement me")
-}
+	ctx, close := context.WithTimeout(context.Background(), 10*time.Second)
+	defer close()
 
-func (Mongodb) FizzTranslator() fizz.Translator {
-	panic("implement me")
-}
+	cursor, err := m.GetCollection(mdl).Find(ctx, filter)
+	if err != nil {
+		return err
+	}
 
-func (Mongodb) Lock(func() error) error {
-	panic("implement me")
-}
+	for cursor.Next(ctx) {
+		v := in.T()
+		if err := cursor.Decode(v); err != nil {
+			return err
+		}
 
-func (Mongodb) TruncateAll(*pop.Connection) error {
-	panic("implement me")
-}
-
-func (Mongodb) AfterOpen(*pop.Connection) error {
-	panic("implement me")
+		if err := in.Add(v); err != nil {
+			return err
+		}
+	}
+	return err
 }
