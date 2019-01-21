@@ -19,6 +19,8 @@ type (
 		Validate() *validate.Errors
 	}
 
+	modelIterableValidator func(*Model) (*validate.Errors, error)
+
 	// All represent slice
 	All interface {
 		// return empty instance of slice type
@@ -73,6 +75,24 @@ func (m *Model) GetObjectID() bson.M {
 		}
 	}
 	return nil
+}
+
+func (m *Model) iterateAndValidate(fn modelIterableValidator) (*validate.Errors, error) {
+	v := reflect.Indirect(reflect.ValueOf(m.Value))
+	if v.Kind() == reflect.Slice || v.Kind() == reflect.Array {
+		for i := 0; i < v.Len(); i++ {
+			val := v.Index(i)
+			newModel := &Model{Model: pop.Model{Value: val.Addr().Interface()}}
+			verrs, err := fn(newModel)
+
+			if err != nil || verrs.HasAny() {
+				return verrs, err
+			}
+		}
+		return validate.NewErrors(), nil
+	}
+
+	return fn(m)
 }
 
 // small helper for check All interface is it correct
