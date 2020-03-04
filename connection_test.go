@@ -5,8 +5,8 @@ import (
 	"github.com/gobuffalo/validate/validators"
 	"github.com/icrowley/fake"
 	"github.com/kataras/iris/core/errors"
-	"github.com/mongodb/mongo-go-driver/bson"
-	"github.com/mongodb/mongo-go-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"github.com/stretchr/testify/assert"
 	"sync"
 )

@@ -4,9 +4,9 @@ import (
 	"github.com/d7561985/mongo-buffalo"
 	"github.com/d7561985/mongo-buffalo/config"
 	"github.com/gobuffalo/envy"
-	"github.com/mongodb/mongo-go-driver/bson/primitive"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"testing"
 )
 
