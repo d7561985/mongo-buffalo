@@ -3,15 +3,17 @@ package mongobuf
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
+
 	"github.com/gobuffalo/pop"
 	"github.com/gobuffalo/validate"
 	"github.com/kataras/iris/core/errors"
 	"github.com/markbates/going/defaults"
-	"github.com/mongodb/mongo-go-driver/bson"
-	"github.com/mongodb/mongo-go-driver/mongo"
-	"github.com/mongodb/mongo-go-driver/mongo/readpref"
-	"sync"
-	"time"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
 const nameMongoDB = "mongo"
@@ -33,7 +35,7 @@ func NewMongo(deets *pop.ConnectionDetails) (*Mongodb, error) {
 	deets.Dialect = nameMongoDB
 
 	res := &Mongodb{ConnectionDetails: deets}
-	client, err := mongo.NewClient(res.URL())
+	client, err := mongo.NewClient(options.Client().ApplyURI(res.URL()))
 	if err != nil {
 		return nil, err
 	}
